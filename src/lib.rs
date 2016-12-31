@@ -6,33 +6,54 @@ mod crc16;
 use crc16::key_hash_slot;
 use std::collections::HashMap;
 use rand::{thread_rng, sample};
-use redis::{Connection, Pipeline, RedisResult, ErrorKind, FromRedisValue, Cmd, Client};
+use redis::{Connection, Pipeline, RedisResult, ErrorKind, FromRedisValue, Cmd, Client,
+            ConnectionLike, Commands, Value};
 
 const TTL: usize = 16;
 
-pub struct RedisCluster {
+fn connect(info: &str) -> Connection {
+    let client = Client::open(info).unwrap();
+    client.get_connection().unwrap()
+}
+
+pub struct Cluster {
     conns: HashMap<String, Connection>,
     slots: HashMap<u16, String>,
 }
 
-impl RedisCluster {
-    pub fn new() -> RedisCluster {
-        RedisCluster {
-            conns: HashMap::new(),
-            slots: HashMap::new(),
+impl Cluster {
+    pub fn new(startup_nodes: Vec<&str>) -> Cluster {
+        let mut slots = HashMap::new();
+        let mut conns = HashMap::new();
+
+        // TODO can't seem to figure out how to read these
+        // mixed-type arrays...
+        for info in startup_nodes {
+            let conn = connect(info);
+            conns.insert(info.to_string(), conn);
+            //     let mut cmd = Cmd::new();
+            //     cmd.arg("CLUSTER").arg("SLOTS");
+
+            // let res = cmd.query::<Vec<Vec<Vec<String>>>>(&conn);
+            // let res = cmd.query::<Vec<Vec<u8>>>(&conn);
+            // println!("{:?}", res);
+            // for slot in cmd.query::<Vec<String>>(&conn) {
+            //     println!("{:?}", slot);
+            // }
+        }
+
+        Cluster {
+            conns: conns,
+            slots: slots,
         }
     }
 
     pub fn add(&mut self, info: &str) -> RedisResult<()> {
-        let conn = self.connect(info);
+        let conn = connect(info);
         self.conns.insert(info.to_string(), conn);
         Ok(())
     }
 
-    fn connect(&self, info: &str) -> Connection {
-        let client = Client::open(info).unwrap();
-        client.get_connection().unwrap()
-    }
 
     fn get_connection_by_slot(&mut self, slot: u16) -> RedisResult<&Connection> {
         let addr = self.slots.get(&slot).map_or(None, |e| Some(e.clone()));
@@ -42,7 +63,7 @@ impl RedisCluster {
                     Ok(self.conns.get(addr).unwrap())
                 } else {
                     // create the connection
-                    let conn = self.connect(addr);
+                    let conn = connect(addr);
                     self.conns.insert(addr.to_string(), conn);
                     Ok(self.conns.get(addr).unwrap())
                 }
@@ -90,3 +111,25 @@ impl RedisCluster {
         panic!("Too many redirections");
     }
 }
+
+impl ConnectionLike for Cluster {
+    fn req_packed_command(&self, cmd: &[u8]) -> RedisResult<Value> {
+        // TODO again, this shouldn't be random...
+        self.get_random_connection().req_packed_command(cmd)
+    }
+
+    fn req_packed_commands(&self,
+                           cmd: &[u8],
+                           offset: usize,
+                           count: usize)
+                           -> RedisResult<Vec<Value>> {
+        // TODO again, this shouldn't be random...
+        self.get_random_connection().req_packed_commands(cmd, offset, count)
+    }
+
+    fn get_db(&self) -> i64 {
+        0
+    }
+}
+
+impl Commands for Cluster {}
