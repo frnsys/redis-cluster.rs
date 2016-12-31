@@ -2,6 +2,9 @@
 name = "redis-cluster"
 version = "0.1.0"
 authors = ["Francis Tseng <f@frnsys.com>"]
+description = "Interface to Redis Cluster"
+repository = "https://github.com/frnsys/redis-cluster.rs"
+license = "MIT"
 
 [dependencies]
 rand = "*"
