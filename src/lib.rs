@@ -30,16 +30,16 @@ impl Cluster {
         // mixed-type arrays...
         for info in startup_nodes {
             let conn = connect(info);
-            conns.insert(info.to_string(), conn);
-            //     let mut cmd = Cmd::new();
-            //     cmd.arg("CLUSTER").arg("SLOTS");
-
-            // let res = cmd.query::<Vec<Vec<Vec<String>>>>(&conn);
+            // let mut cmd = Cmd::new();
+            // cmd.arg("CLUSTER").arg("SLOTS");
             // let res = cmd.query::<Vec<Vec<u8>>>(&conn);
+            // let res = cmd.query::<Vec<Vec<Vec<String>>>>(&conn);
+            // let res = cmd.query::<String>(&conn);
             // println!("{:?}", res);
             // for slot in cmd.query::<Vec<String>>(&conn) {
             //     println!("{:?}", slot);
             // }
+            conns.insert(info.to_string(), conn);
         }
 
         Cluster {
@@ -76,6 +76,10 @@ impl Cluster {
 
     fn get_random_connection(&self) -> &Connection {
         let mut rng = thread_rng();
+        // TODO can shuffle Rng::shuffle
+        // and cmd.arg("PING").execute(&conn)
+        // to check if the connection is still live
+        // see: <https://github.com/antirez/redis-rb-cluster/blob/master/cluster.rb#L174>
         sample(&mut rng, self.conns.values(), 1).first().unwrap()
     }
 
