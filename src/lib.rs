@@ -6,8 +6,8 @@ mod crc16;
 use crc16::key_hash_slot;
 use std::collections::HashMap;
 use rand::{thread_rng, sample};
-use redis::{Connection, Pipeline, RedisResult, ErrorKind, FromRedisValue, Cmd, Client,
-            ConnectionLike, Commands, Value};
+use redis::{Connection, Pipeline, RedisResult, ErrorKind, ToRedisArgs, FromRedisValue, Cmd,
+            Client, ConnectionLike, Commands, Value};
 
 const TTL: usize = 16;
 
@@ -16,9 +16,39 @@ fn connect(info: &str) -> Connection {
     client.get_connection().unwrap()
 }
 
+fn get_slot_from_command(args: &Vec<Vec<u8>>) -> Option<u16> {
+    if args.len() > 1 {
+        Some(key_hash_slot(args[1].as_slice()))
+    } else {
+        None
+    }
+}
+
 pub struct Cluster {
     conns: HashMap<String, Connection>,
     slots: HashMap<u16, String>,
+}
+
+pub struct ClusterCmd {
+    cmd: Cmd,
+    args: Vec<Vec<u8>>,
+}
+
+impl ClusterCmd {
+    pub fn new() -> ClusterCmd {
+        ClusterCmd {
+            cmd: Cmd::new(),
+            args: Vec::new(),
+        }
+    }
+
+    pub fn arg<T: ToRedisArgs>(&mut self, arg: T) -> &mut ClusterCmd {
+        for item in arg.to_redis_args().into_iter() {
+            self.args.push(item);
+        }
+        self.cmd.arg(arg);
+        self
+    }
 }
 
 impl Cluster {
@@ -40,6 +70,7 @@ impl Cluster {
             //     println!("{:?}", slot);
             // }
             conns.insert(info.to_string(), conn);
+            break; // TODO this loop can terminate if the first node replies
         }
 
         Cluster {
@@ -54,23 +85,23 @@ impl Cluster {
         Ok(())
     }
 
-
-    fn get_connection_by_slot(&mut self, slot: u16) -> RedisResult<&Connection> {
+    fn get_connection_by_slot(&self, slot: u16) -> Option<&Connection> {
         let addr = self.slots.get(&slot).map_or(None, |e| Some(e.clone()));
         match addr {
             Some(ref addr) => {
                 if self.conns.contains_key(addr) {
-                    Ok(self.conns.get(addr).unwrap())
+                    Some(self.conns.get(addr).unwrap())
                 } else {
                     // create the connection
-                    let conn = connect(addr);
-                    self.conns.insert(addr.to_string(), conn);
-                    Ok(self.conns.get(addr).unwrap())
+                    // let conn = connect(addr);
+                    // self.conns.insert(addr.to_string(), conn);
+                    // Ok(self.conns.get(addr).unwrap())
+                    None
                 }
             }
 
             // just return a random connection
-            None => Ok(self.get_random_connection()),
+            None => Some(self.get_random_connection()),
         }
     }
 
@@ -83,33 +114,26 @@ impl Cluster {
         sample(&mut rng, self.conns.values(), 1).first().unwrap()
     }
 
-    pub fn send_cluster_command<T: FromRedisValue>(&mut self, cmd: &Cmd) -> RedisResult<T> {
-        // TODO
-        // to get a slot for a command, we need access to cmd.args, which is a private field.
-        // so...for now just getting a random connection....
-        // refer to <https://github.com/antirez/redis-rb-cluster/blob/master/cluster.rb#L220>
-        // and <https://github.com/tickbh/td_rredis/blob/a9330138e35188603bdbac55ffb846c60919d577/src/cmd.rs#L278>
-        // this is a really basic implementation. see the referenced links above.
+    pub fn send_cluster_command<T: FromRedisValue>(&mut self, cmd: &ClusterCmd) -> RedisResult<T> {
+        let mut try_random_node = false;
         for _ in 0..TTL {
-            let conn = self.get_random_connection();
-            // TODO better error handling,
-            // refer to <https://github.com/antirez/redis-rb-cluster/blob/master/cluster.rb#L245>
-            match cmd.query(conn) {
+            let slot = match get_slot_from_command(&cmd.args) {
+                Some(slot) => slot,
+                None => panic!("No way to dispatch this command to Redis Cluster"),
+            };
+            let conn = if try_random_node {
+                try_random_node = false;
+                self.get_random_connection()
+            } else {
+                self.get_connection_by_slot(slot).unwrap()
+            };
+            match cmd.cmd.query(conn) {
                 Ok(res) => return Ok(res),
-                Err(_) => continue,
-            }
-        }
-        panic!("Too many redirections");
-    }
-
-    pub fn send_cluster_pipeline<T: FromRedisValue>(&mut self, pipe: &Pipeline) -> RedisResult<T> {
-        // See above TODO
-        for _ in 0..TTL {
-            let conn = self.get_random_connection();
-            // See above TODO
-            match pipe.query(conn) {
-                Ok(res) => return Ok(res),
-                Err(_) => continue,
+                Err(_) => {
+                    // TODO handle MOVE/ASK errors,
+                    // refer to <https://github.com/antirez/redis-rb-cluster/blob/master/cluster.rb#L245>
+                    try_random_node = true;
+                }
             }
         }
         panic!("Too many redirections");
@@ -118,8 +142,9 @@ impl Cluster {
 
 impl ConnectionLike for Cluster {
     fn req_packed_command(&self, cmd: &[u8]) -> RedisResult<Value> {
-        // TODO again, this shouldn't be random...
-        self.get_random_connection().req_packed_command(cmd)
+        let slot = key_hash_slot(cmd);
+        let conn = self.get_connection_by_slot(slot).unwrap();
+        conn.req_packed_command(cmd)
     }
 
     fn req_packed_commands(&self,
@@ -127,8 +152,9 @@ impl ConnectionLike for Cluster {
                            offset: usize,
                            count: usize)
                            -> RedisResult<Vec<Value>> {
-        // TODO again, this shouldn't be random...
-        self.get_random_connection().req_packed_commands(cmd, offset, count)
+        let slot = key_hash_slot(cmd);
+        let conn = self.get_connection_by_slot(slot).unwrap();
+        conn.req_packed_commands(cmd, offset, count)
     }
 
     fn get_db(&self) -> i64 {
