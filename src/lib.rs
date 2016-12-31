@@ -10,8 +10,7 @@ use slots::get_slots;
 use crc16::key_hash_slot;
 use std::collections::HashMap;
 use rand::{thread_rng, sample};
-use redis::{Connection, Pipeline, RedisResult, ErrorKind, FromRedisValue, Cmd, Client,
-            ConnectionLike, Commands, Value};
+use redis::{Connection, RedisResult, FromRedisValue, Client, ConnectionLike, Commands, Value};
 
 const TTL: usize = 16;
 
