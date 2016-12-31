@@ -7,6 +7,6 @@ repository = "https://github.com/frnsys/redis-cluster.rs"
 license = "MIT"
 
 [dependencies]
-rand = "*"
+rand = "0.3"
 redis = "0.5.3"
 
