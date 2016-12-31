@@ -5,12 +5,13 @@ mod cmd;
 mod crc16;
 mod slots;
 
-use cmd::ClusterCmd;
+pub use cmd::ClusterCmd;
 use slots::get_slots;
 use crc16::key_hash_slot;
 use std::collections::HashMap;
 use rand::{thread_rng, sample};
-use redis::{Connection, RedisResult, FromRedisValue, Client, ConnectionLike, Commands, Value};
+use redis::{Connection, RedisResult, FromRedisValue, Client, ConnectionLike, Commands, Value, Cmd,
+            ErrorKind};
 
 const TTL: usize = 16;
 
@@ -19,32 +20,68 @@ fn connect(info: &str) -> Connection {
     client.get_connection().unwrap()
 }
 
+fn check_connection(conn: &Connection) -> bool {
+    let mut cmd = Cmd::new();
+    cmd.arg("PING");
+    match cmd.query::<String>(conn) {
+        Ok(_) => true,
+        Err(_) => false,
+    }
+}
+
 pub struct Cluster {
     conns: HashMap<String, Connection>,
     slots: HashMap<u16, String>,
+    needs_refresh: bool,
 }
 
 impl Cluster {
     pub fn new(startup_nodes: Vec<&str>) -> Cluster {
-        let mut slots = HashMap::new();
         let mut conns = HashMap::new();
-
         for info in startup_nodes {
             let conn = connect(info);
+            conns.insert(info.to_string(), conn);
+        }
+
+        let mut clus = Cluster {
+            conns: conns,
+            slots: HashMap::new(),
+            needs_refresh: false,
+        };
+        clus.refresh_slots();
+        clus
+    }
+
+    /// Query a node to discover slot-> master mappings.
+    fn refresh_slots(&mut self) {
+        for conn in self.conns.values() {
             for slot_data in get_slots(&conn) {
                 for (slot, addr) in slot_data.nodes() {
-                    slots.insert(slot, addr);
+                    self.slots.insert(slot, addr);
                 }
             }
-            conns.insert(info.to_string(), conn);
-
             // this loop can terminate if the first node replies
             break;
         }
+        self.refresh_conns();
+        self.needs_refresh = false;
+    }
 
-        Cluster {
-            conns: conns,
-            slots: slots,
+    /// Remove dead connections and connect to new nodes if necessary
+    fn refresh_conns(&mut self) {
+        for addr in self.slots.values() {
+            if self.conns.contains_key(addr) {
+                let ok = {
+                    let conn = self.conns.get(addr).unwrap();
+                    check_connection(conn)
+                };
+                if !ok {
+                    self.conns.remove(addr);
+                }
+            } else {
+                let conn = connect(addr);
+                self.conns.insert(addr.to_string(), conn);
+            }
         }
     }
 
@@ -85,31 +122,35 @@ impl Cluster {
 
     fn get_random_connection(&self) -> &Connection {
         let mut rng = thread_rng();
-        // TODO can shuffle Rng::shuffle
-        // and cmd.arg("PING").execute(&conn)
-        // to check if the connection is still live
-        // see: <https://github.com/antirez/redis-rb-cluster/blob/master/cluster.rb#L174>
         sample(&mut rng, self.conns.values(), 1).first().unwrap()
     }
 
-    pub fn send_cluster_command<T: FromRedisValue>(&mut self, cmd: &ClusterCmd) -> RedisResult<T> {
+    pub fn send_command<T: FromRedisValue>(&mut self, cmd: &ClusterCmd) -> RedisResult<T> {
+        if self.needs_refresh {
+            self.refresh_slots();
+        }
         let mut try_random_node = false;
         for _ in 0..TTL {
             let slot = match cmd.slot() {
                 Some(slot) => slot,
                 None => panic!("No way to dispatch this command to Redis Cluster"),
             };
-            let conn = if try_random_node {
-                try_random_node = false;
-                self.get_random_connection()
-            } else {
-                self.get_or_create_connection_by_slot(slot)
+            let res = {
+                let conn = if try_random_node {
+                    try_random_node = false;
+                    self.get_random_connection()
+                } else {
+                    self.get_or_create_connection_by_slot(slot)
+                };
+                cmd.query(conn)
             };
-            match cmd.query(conn) {
+            match res {
                 Ok(res) => return Ok(res),
-                Err(_) => {
-                    // TODO handle MOVE/ASK errors,
-                    // refer to <https://github.com/antirez/redis-rb-cluster/blob/master/cluster.rb#L245>
+                Err(err) => {
+                    if err.kind() == ErrorKind::ExtensionError &&
+                       err.extension_error_code().unwrap() == "MOVED" {
+                        self.needs_refresh = true;
+                    }
                     try_random_node = true;
                 }
             }

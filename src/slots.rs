@@ -13,7 +13,7 @@ pub struct SlotInfo {
 impl SlotInfo {
     pub fn nodes(&self) -> Vec<(u16, String)> {
         (self.start_slot..self.end_slot)
-            .map(|slot| (slot, self.master.to_string()))
+            .map(|slot| (slot, format!("redis://{}", self.master.to_string())))
             .collect()
     }
 }
