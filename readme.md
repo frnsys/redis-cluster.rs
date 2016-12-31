@@ -11,3 +11,7 @@ You need to spin up a Redis Cluster before running it. You can run `examples/clu
 Then run the example:
 
     cargo run --example basic
+
+## Acknowledgements
+
+The base for this code is [from here](https://github.com/tickbh/td_rredis).
