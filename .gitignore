@@ -1,2 +1,5 @@
 target
 Cargo.lock
+dump.rdb
+nodes.conf
+appendonly.aof
