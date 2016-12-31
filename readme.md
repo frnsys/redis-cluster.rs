@@ -38,6 +38,11 @@ Then run the example:
 
     cargo run --example basic
 
+## TODO
+
+- tests
+- make it a drop-in replacement for `redis::Client`/`redis::Connection`
+
 ## Acknowledgements
 
 The base for this code is [from here](https://github.com/tickbh/td_rredis).
