@@ -1,0 +1,9 @@
+[package]
+name = "redis-cluster"
+version = "0.1.0"
+authors = ["Francis Tseng <f@frnsys.com>"]
+
+[dependencies]
+rand = "*"
+redis = "0.5.3"
+
