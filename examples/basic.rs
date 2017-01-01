@@ -1,5 +1,7 @@
+extern crate redis;
 extern crate redis_cluster;
 
+use redis::Commands;
 use redis_cluster::{Cluster, ClusterCmd};
 
 fn main() {
@@ -15,4 +17,9 @@ fn main() {
     let res: String = clus.send_command(&cmd).unwrap();
     println!("{:?}", res);
     assert_eq!(res, "bar");
+
+    let _: () = clus.set("hey", "there").unwrap();
+    let res: String = clus.get("hey").unwrap();
+    println!("{:?}", res);
+    assert_eq!(res, "there");
 }

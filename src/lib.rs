@@ -5,9 +5,8 @@ mod cmd;
 mod crc16;
 mod slots;
 
-pub use cmd::ClusterCmd;
+pub use cmd::{ClusterCmd, slot_for_packed_command};
 use slots::get_slots;
-use crc16::key_hash_slot;
 use std::collections::HashMap;
 use rand::{thread_rng, sample};
 use redis::{Connection, RedisResult, FromRedisValue, Client, ConnectionLike, Commands, Value, Cmd,
@@ -161,8 +160,8 @@ impl Cluster {
 
 impl ConnectionLike for Cluster {
     fn req_packed_command(&self, cmd: &[u8]) -> RedisResult<Value> {
-        let slot = key_hash_slot(cmd);
         // TODO we dont have mutable access to self so we can't get_or_create_connection_by_slot...
+        let slot = slot_for_packed_command(cmd).unwrap();
         let conn = self.get_connection_by_slot(slot).unwrap();
         conn.req_packed_command(cmd)
     }
@@ -172,8 +171,8 @@ impl ConnectionLike for Cluster {
                            offset: usize,
                            count: usize)
                            -> RedisResult<Vec<Value>> {
-        let slot = key_hash_slot(cmd);
         // TODO we dont have mutable access to self so we can't get_or_create_connection_by_slot...
+        let slot = slot_for_packed_command(cmd).unwrap();
         let conn = self.get_connection_by_slot(slot).unwrap();
         conn.req_packed_commands(cmd, offset, count)
     }

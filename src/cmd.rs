@@ -34,10 +34,56 @@ impl ClusterCmd {
 
     /// Get the slot for this command.
     pub fn slot(&self) -> Option<u16> {
-        if self.args.len() > 1 {
-            Some(key_hash_slot(self.args[1].as_slice()))
+        slot_for_command(&self.args)
+    }
+}
+
+fn slot_for_command(args: &Vec<Vec<u8>>) -> Option<u16> {
+    if args.len() > 1 {
+        Some(key_hash_slot(args[1].as_slice()))
+    } else {
+        None
+    }
+}
+
+pub fn slot_for_packed_command(cmd: &[u8]) -> Option<u16> {
+    let args = unpack_command(cmd);
+    slot_for_command(&args)
+}
+
+/// `redis-rs` passes packed commands (as a u8 slice)
+/// to the methods of the Commands trait
+/// we need to "unpack" the command into the
+/// original arguments to properly compute
+/// the command's slot.
+/// This is pretty messy/can probably be better
+fn unpack_command(cmd: &[u8]) -> Vec<Vec<u8>> {
+    let mut arg: Vec<u8> = Vec::new();
+    let mut args: Vec<Vec<u8>> = Vec::new();
+
+    // first 4 are some leading info ('*', len of args, '\r', '\n')
+    // the next 4 precede the first arg
+    // see: <https://github.com/mitsuhiko/redis-rs/blob/master/src/cmd.rs#L85>
+    let mut iter = cmd.iter().skip(4).skip(4).peekable();
+
+    'outer: loop {
+        let b = *iter.next().unwrap();
+
+        // args are separated by [13, 10]
+        if b == 13 && iter.peek().unwrap() == &&10 {
+            args.push(arg.clone());
+            arg.clear();
+
+            // consume next 4 which precede the next arg
+            for _ in 0..5 {
+                match iter.next() {
+                    Some(_) => (),
+                    None => break 'outer,
+                };
+            }
         } else {
-            None
+            arg.push(b);
         }
     }
+    args
 }
