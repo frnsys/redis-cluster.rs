@@ -1,6 +1,6 @@
 [package]
 name = "redis-cluster"
-version = "0.1.2"
+version = "0.1.3"
 authors = ["Francis Tseng <f@frnsys.com>"]
 description = "Interface to Redis Cluster"
 repository = "https://github.com/frnsys/redis-cluster.rs"
