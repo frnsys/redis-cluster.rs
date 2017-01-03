@@ -29,6 +29,7 @@ fn check_connection(conn: &Connection) -> bool {
 }
 
 pub struct Cluster {
+    startup_nodes: Vec<String>,
     conns: HashMap<String, Connection>,
     slots: HashMap<u16, String>,
     needs_refresh: bool,
@@ -37,6 +38,7 @@ pub struct Cluster {
 impl Cluster {
     pub fn new(startup_nodes: Vec<&str>) -> Cluster {
         let mut conns = HashMap::new();
+        let nodes = startup_nodes.iter().map(|s| s.to_string()).collect();
         for info in startup_nodes {
             let conn = connect(info);
             conns.insert(info.to_string(), conn);
@@ -46,6 +48,7 @@ impl Cluster {
             conns: conns,
             slots: HashMap::new(),
             needs_refresh: false,
+            startup_nodes: nodes,
         };
         clus.refresh_slots();
         clus
@@ -183,3 +186,10 @@ impl ConnectionLike for Cluster {
 }
 
 impl Commands for Cluster {}
+
+impl Clone for Cluster {
+    fn clone(&self) -> Cluster {
+        let startup_nodes = self.startup_nodes.iter().map(|s| s.as_ref()).collect();
+        Cluster::new(startup_nodes)
+    }
+}
