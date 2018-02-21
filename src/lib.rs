@@ -8,7 +8,8 @@ mod slots;
 pub use cmd::{ClusterCmd, slot_for_packed_command};
 use slots::get_slots;
 use std::collections::HashMap;
-use rand::{thread_rng, sample};
+use rand::thread_rng;
+use rand::seq::sample_iter;
 use redis::{Connection, RedisResult, FromRedisValue, Client, ConnectionLike, Commands, Value, Cmd,
             ErrorKind};
 
@@ -124,7 +125,8 @@ impl Cluster {
 
     fn get_random_connection(&self) -> &Connection {
         let mut rng = thread_rng();
-        sample(&mut rng, self.conns.values(), 1).first().unwrap()
+        let samples = sample_iter(&mut rng, self.conns.values(), 1).ok().unwrap();
+        samples.first().unwrap()
     }
 
     pub fn send_command<T: FromRedisValue>(&mut self, cmd: &ClusterCmd) -> RedisResult<T> {

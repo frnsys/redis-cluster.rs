@@ -8,6 +8,6 @@ license = "MIT"
 
 [dependencies]
 crc16 = "*"
-rand = "0.3"
+rand = "0.4"
 redis = "0.8.0"
 
