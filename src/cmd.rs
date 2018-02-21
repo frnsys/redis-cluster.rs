@@ -6,24 +6,20 @@ use slots::SLOT_SIZE;
 /// but we need it to determine a slot from the command.
 /// So this is a simple wrapper around Redis::Cmd that keeps
 /// track of the args.
+#[deprecated]
 pub struct ClusterCmd {
-    cmd: Cmd,
-    args: Vec<Vec<u8>>,
+    cmd: Cmd
 }
 
 impl ClusterCmd {
     pub fn new() -> ClusterCmd {
         ClusterCmd {
-            cmd: Cmd::new(),
-            args: Vec::new(),
+            cmd: Cmd::new()
         }
     }
 
     /// Add an arg to the command.
     pub fn arg<T: ToRedisArgs>(&mut self, arg: T) -> &mut ClusterCmd {
-        for item in arg.to_redis_args().into_iter() {
-            self.args.push(item);
-        }
         self.cmd.arg(arg);
         self
     }
@@ -33,23 +29,19 @@ impl ClusterCmd {
         self.cmd.query(conn)
     }
 
-    /// Get the slot for this command.
-    pub fn slot(&self) -> Option<u16> {
-        slot_for_command(&self.args)
-    }
-}
-
-fn slot_for_command(args: &Vec<Vec<u8>>) -> Option<u16> {
-    if args.len() > 1 {
-        Some(State::<XMODEM>::calculate(&args[1]) % SLOT_SIZE as u16)
-    } else {
-        None
+    /// Get the packed command as a byte vector.
+    pub fn get_packed_command(&self) -> Vec<u8> {
+        self.cmd.get_packed_command()
     }
 }
 
 pub fn slot_for_packed_command(cmd: &[u8]) -> Option<u16> {
     let args = unpack_command(cmd);
-    slot_for_command(&args)
+    if args.len() > 1 {
+        Some(State::<XMODEM>::calculate(&args[1]) % SLOT_SIZE as u16)
+    } else {
+        None
+    }
 }
 
 /// `redis-rs` passes packed commands (as a u8 slice)
