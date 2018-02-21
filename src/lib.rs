@@ -11,7 +11,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use rand::thread_rng;
 use rand::seq::sample_iter;
-use redis::{Connection, IntoConnectionInfo, RedisResult, FromRedisValue, Client, ConnectionLike, Commands, Value, Cmd, ErrorKind};
+use redis::{Connection, ConnectionAddr, IntoConnectionInfo, RedisError, RedisResult, FromRedisValue, Client, ConnectionLike, Commands, Value, Cmd, ErrorKind};
 
 const TTL: usize = 16;
 
@@ -43,14 +43,24 @@ pub struct Cluster {
 }
 
 impl Cluster {
-    pub fn new(startup_nodes: Vec<&str>) -> Cluster {
+    pub fn new<T: IntoConnectionInfo>(startup_nodes: Vec<T>) -> RedisResult<Cluster> {
         let mut conns = HashMap::with_capacity(startup_nodes.len());
         let mut nodes = Vec::with_capacity(startup_nodes.len());
 
         for info in startup_nodes {
-            let conn = connect(info).unwrap();
-            conns.insert(info.to_string(), conn);
-            nodes.push(info.to_string());
+            let info = info.into_connection_info()?;
+
+            let addr = match *info.addr {
+                ConnectionAddr::Tcp(ref host, port) => format!("redis://{}:{}", host, port),
+                ConnectionAddr::Unix(ref path) => format!("redis+unix:///{}", path.display())
+            };
+
+            let conn = connect(info)?;
+            if !check_connection(&conn) {
+                return Err(RedisError::from((ErrorKind::IoError, "It is failed to check startup nodes.")));
+            }
+            conns.insert(addr.clone(), conn);
+            nodes.push(addr);
         }
 
         let clus = Cluster {
@@ -59,7 +69,7 @@ impl Cluster {
             startup_nodes: nodes
         };
         clus.refresh_slots();
-        clus
+        Ok(clus)
     }
 
     #[deprecated]
@@ -206,6 +216,6 @@ impl Commands for Cluster {}
 impl Clone for Cluster {
     fn clone(&self) -> Cluster {
         let startup_nodes = self.startup_nodes.iter().map(|s| s.as_ref()).collect();
-        Cluster::new(startup_nodes)
+        Cluster::new(startup_nodes).unwrap()
     }
 }
