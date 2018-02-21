@@ -86,14 +86,15 @@ impl Cluster {
             slots.clear();
 
             for conn in conns.values() {
-                let slots_data = get_slots(&conn);
-                for slot_data in slots_data {
-                    for (slot, addr) in slot_data.nodes() {
-                        slots.insert(slot, addr);
+                if let Ok(slots_data) = get_slots(&conn) {
+                    for slot_data in slots_data {
+                        for (slot, addr) in slot_data.nodes() {
+                            slots.insert(slot, addr);
+                        }
                     }
+                    // this loop can terminate if the first node replies
+                    break;
                 }
-                // this loop can terminate if the first node replies
-                break;
             }
         }
         self.refresh_conns();
