@@ -1,8 +1,8 @@
+extern crate crc16;
 extern crate rand;
 extern crate redis;
 
 mod cmd;
-mod crc16;
 mod slots;
 
 pub use cmd::{ClusterCmd, slot_for_packed_command};

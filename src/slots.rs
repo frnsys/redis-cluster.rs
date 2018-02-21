@@ -2,6 +2,8 @@ use std::str::from_utf8;
 use std::net::SocketAddr;
 use redis::{Connection, Cmd, ConnectionLike, Value};
 
+pub const SLOT_SIZE: usize = 16384;
+
 #[derive(Debug)]
 pub struct SlotInfo {
     start_slot: u16,

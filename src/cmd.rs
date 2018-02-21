@@ -1,5 +1,6 @@
-use crc16::key_hash_slot;
+use crc16::*;
 use redis::{Cmd, Connection, ToRedisArgs, FromRedisValue, RedisResult};
+use slots::SLOT_SIZE;
 
 /// Redis::Cmd's `args` field is private,
 /// but we need it to determine a slot from the command.
@@ -40,7 +41,7 @@ impl ClusterCmd {
 
 fn slot_for_command(args: &Vec<Vec<u8>>) -> Option<u16> {
     if args.len() > 1 {
-        Some(key_hash_slot(args[1].as_slice()))
+        Some(State::<XMODEM>::calculate(&args[1]) % SLOT_SIZE as u16)
     } else {
         None
     }
